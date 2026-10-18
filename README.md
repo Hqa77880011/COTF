@@ -2,64 +2,61 @@
 
 Implementation of **COTF: Assessing Local Measurement Support in Sparse-Sensor Battery Thermal Field Reconstruction**.
 
-A variable-set encoder pools sparse coordinate/temperature sensors and decodes the thermal field at declared query coordinates. The empty-set prediction measures prior-only reconstruction. Leave-one-sensor-out reconstructions provide local removal fragility and normalized influence; evidence gain and fragility form the trust score. Interval widths can be calibrated on independent grouped residuals with the calibration command.
+## Installation
 
-## Install
-
-Use Python 3.10 or later. Create and activate a virtual environment, then install:
+Python >=3.10.
 
 ```bash
 python -m pip install -e .
 ```
 
-## Prepare data
+Inspection environment: Python 3.13.5, NumPy 2.1.3, PyTorch 2.7.1+cu118, SciPy 1.15.3 and scikit-learn 1.6.1. Checks cover Python syntax, JSON/TOML parsing and CLI options against parser definitions; training and evaluation were not run.
+
+## Data and preprocessing
+
+Generate sensor/query coordinates and the analytic temperature field `20 + 5*x + 3*y**2`.
+
+```bash
+cotf demo --output data/generated.npz --count 96 --config config.json --seed 13
+cotf prepare --input data/generated.npz --output data/prepared
+```
 
 `x[N,S,3]` contains sensor x/y coordinates and measured temperature, `available[N,S]` sensor availability, `query[N,P,2]` field query locations, and `y[N,P]` reference temperature. Split complete thermal runs/battery units, including related charge cycles and sensor layouts. Temperature units and the fixed `temperature_scale` must agree.
 
-Arrays use numeric NPZ format, loaded without pickle. `group[N]` identifies independent subjects, devices, scenes, lots, or source images. Related samples must share a group. Optional `split[N]` codes 0/1/2/3 explicitly assign training/validation/calibration/test (three-role input using 0/1/2 remains supported); otherwise ordered groups are allocated 60/15/10/15 to training/validation/calibration/test. Test data never select model parameters or checkpoints.
+Numeric NPZ input uses `group` to keep related samples together. `prepare` writes train/validation/calibration/test archives from ordered groups (60/15/10/15), or honors explicit `split` codes 0/1/2/3.
+
+## Training and inference
 
 ```bash
-cotf demo --output data/example.npz --count 96 --config config.json
-cotf prepare --input data/example.npz --output data/prepared
+cotf train --input data/prepared --output runs/full --config config.json --variant full --epochs 100 --batch-size 16 --seed 13
 ```
 
-The demo defines a small synthetic problem with the documented tensor interface. Use application data in that schema for the paper's evaluation settings.
+Use `--device cuda` to select CUDA; CPU is the default. Keep the configuration, splits and seed fixed across comparisons.
 
-## Train and execute
+## Evaluation
 
 ```bash
-cotf train --input data/prepared --output runs/full --config config.json --variant full --epochs 100 --batch-size 16
 cotf evaluate --input data/prepared/test.npz --model runs/full/model.pt --output runs/full/evaluation
-cotf plot --input runs --output runs/figures
 ```
 
-Training uses AdamW and selects the minimum validation objective. `model.pt` stores parameters and configuration; `history.json` records training/validation objectives. Evaluation exports predictions and mechanism tensors to `predictions.npz` and computed scores to `metrics.json`. Plotting exports comparison charts from those actual evaluation files.
+## Ablations
 
-`--device cpu` is the default; `--device cuda` selects CUDA. `--lr`, `--epochs`, `--batch-size`, and `--seed` control optimization. Method parameters are in `config.json`; `--set key=value` overrides one value using JSON syntax. Use identical splits and seeds across comparisons.
-
-## Calibration
-
-For interval or classification confidence calibration, use independent groups excluded from fitting and checkpoint selection:
+Variants: `full`, `baseline`, `no_gain`, `no_removal`. Reuse the prepared data and training seed:
 
 ```bash
-cotf calibrate --input data/prepared/calibration.npz --model runs/full/model.pt --output runs/full/calibrated.pt
-```
-
-Evaluate `calibrated.pt` with the same evaluation command. Classification uses temperature scaling; numeric intervals use a 90% group-maximum split-calibration expansion. Insufficient independent units retain infinite intervals. Pretraining checkpoints can initialize supervised training with `train --init path/to/model.pt`.
-
-## Baselines and ablations
-
-Available variants: `full`, `baseline`, `no_gain`, `no_removal`. `baseline` removes the paper-specific mechanism while retaining the input and prediction task. Other variants disable their named component.
-
-```bash
-cotf train --input data/prepared --output runs/baseline --config config.json --variant baseline
+cotf train --input data/prepared --output runs/baseline --config config.json --variant baseline --epochs 100 --batch-size 16 --seed 13
 cotf evaluate --input data/prepared/test.npz --model runs/baseline/model.pt --output runs/baseline/evaluation
 ```
 
-## Metrics and implementation conventions
+## Outputs
 
-Classification reports accuracy, balanced accuracy, macro-F1, NLL, confidence ECE, and worst-group F1; binary tasks add AUROC and AUPRC. Unknown labels use -1 and enable unknown AUROC and OSCR. Segmentation reports Dice, IoU, precision, recall, MAE, Brier/ECE, two-pixel boundary F1, symmetric contour distance, and HD95. Reconstruction reports RMSE, MAE, signed bias, unit-range PSNR, and Gaussian-window SSIM. Each method adds its mechanism metrics where applicable.
+- `data/prepared/*.npz`: grouped data splits.
+- `runs/full/model.pt`: validation-selected parameters and model configuration.
+- `runs/full/history.json` and `training.json`: objectives and run settings.
+- `runs/full/evaluation/predictions.npz` and `metrics.json`: predictions/mechanism arrays and computed metrics.
 
-Parameter counts and forward timing describe the executing process. Use batch size one and a declared device configuration for device latency comparisons. Physical energy and scores from external task evaluators require measured inputs; they are not inferred from parameter counts. All prediction arrays remain available for task-specific evaluation.
+```bash
+cotf plot --input runs --output runs/figures
+```
 
-The implementation uses the explicit core operations described above with configurable compact networks. Numeric conventions and application-specific information are stated with the method and data schema. The parameter file contains the current defaults.
+`runs/figures/*.png` compares saved evaluation metrics. All data, checkpoint and output paths are CLI arguments.
