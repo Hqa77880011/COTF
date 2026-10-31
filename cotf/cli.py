@@ -106,6 +106,7 @@ def main():
         data = read(Path(args.input) / "train.npz")
         validation = read(Path(args.input) / "validation.npz")
         config.setdefault("input_shape", list(data["x"].shape[1:]))
+        config["context_dimensions"] = data["context"].shape[-1] if "context" in data else 0
         config.setdefault("classes", int(np.max(data.get("state", data["y"]))) + 1 if data["y"].ndim == 1 and data["y"].dtype.kind in "iu" else 2)
         network = method.Model(config).to(args.device)
         if args.init:
@@ -179,10 +180,12 @@ def main():
             else:
                 raise ValueError("Calibration needs class probabilities or numeric prediction bounds")
             truth = torch.as_tensor(data["y"], device=lower.device)
-            score = torch.maximum(torch.maximum(lower-truth, truth-upper), torch.zeros_like(lower)).reshape(len(truth), -1).max(-1).values.detach().cpu().numpy()
+            radius = state["config"]["temperature_scale"] * (prediction["trust_risk"] + 1e-8)
+            residual = abs(truth - prediction["prediction"]) / radius
+            score = residual.reshape(len(truth), -1).max(-1).values.detach().cpu().numpy()
             unit = [score[data["group"] == group].max() for group in np.unique(data["group"])]
             rank = int(np.ceil((len(unit)+1)*.9))
-            state["interval_expansion"] = float(np.sort(unit)[rank-1]) if rank <= len(unit) else float("inf")
+            state["interval_multiplier"] = float(np.sort(unit)[rank-1]) if rank <= len(unit) else float("inf")
         torch.save(state, out)
     elif args.command == "evaluate":
         state = torch.load(args.model, map_location=args.device, weights_only=True)
@@ -200,11 +203,13 @@ def main():
             prediction = network(batch)
             if "classification_temperature" in state and "probability" in prediction:
                 prediction["probability"] = (prediction["probability"].clamp_min(1e-10).log() / state["classification_temperature"]).softmax(-1)
-            if "interval_expansion" in state:
+            if "interval_multiplier" in state:
                 lower = prediction.get("lower", prediction.get("prediction"))
                 upper = prediction.get("upper", prediction.get("prediction"))
-                prediction["lower"] = lower-state["interval_expansion"]
-                prediction["upper"] = upper+state["interval_expansion"]
+                center = prediction["prediction"]
+                radius = (upper - lower) / 2 * state["interval_multiplier"]
+                prediction["lower"] = center - radius
+                prediction["upper"] = center + radius
                 if "bound_lower" in prediction:
                     prediction["lower"] = torch.maximum(prediction["lower"], prediction["bound_lower"])
                     prediction["upper"] = torch.minimum(prediction["upper"], prediction["bound_upper"])
