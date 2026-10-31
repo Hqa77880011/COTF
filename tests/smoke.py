@@ -34,11 +34,11 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=.001)
 loss = model.objective(batch, model(batch))
 loss.backward()
 assert torch.isfinite(loss)
-assert model.encoder[0].weight.grad.abs().sum() > 0
-assert model.decoder[-1].weight.grad.abs().sum() > 0
-old = model.encoder[0].weight.detach().clone()
+assert model.backbone.token.weight.grad.abs().sum() > 0
+assert model.backbone.output[-1].weight.grad.abs().sum() > 0
+old = model.backbone.token.weight.detach().clone()
 optimizer.step()
-assert not torch.equal(old, model.encoder[0].weight)
+assert not torch.equal(old, model.backbone.token.weight)
 # Hand calculation: sorted errors 1,3 -> risks 1,2 -> AURC 1.5.
 p = {"prediction": np.array([[1., 3.]]), "trust_risk": np.array([[.1, .9]]),
      "gain": np.ones((1,2)), "fragility": np.zeros((1,2)),

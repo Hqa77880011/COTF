@@ -1,5 +1,21 @@
 {
   "width": 32,
   "temperature_scale": 1.0,
-  "tau": 0.01
+  "tau": 0.01,
+  "backbone": "senseiver",
+  "heads": 4,
+  "latents": 16,
+  "latent_layers": 2,
+  "ensemble_members": 5,
+  "grid_size": 32,
+  "modes": 8,
+  "fourier_layers": 4,
+  "coordinate_min": [
+    0,
+    0
+  ],
+  "coordinate_max": [
+    1,
+    1
+  ]
 }

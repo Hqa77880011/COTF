@@ -34,6 +34,8 @@ def main():
         p.add_argument("--config")
         p.add_argument("--set", action="append", default=[])
         p.add_argument("--variant", default="full")
+        p.add_argument("--backbone",choices=["senseiver","implicit","deeponet","recfno","voronoi_cnn","kriging","ensemble"])
+        p.add_argument("--score",choices=["full","baseline","random_masks","shuffle","no_gain","no_removal","gain_only","fragility_only","oracle"])
         p.add_argument("--seed", type=int, default=13)
         p.add_argument("--epochs", type=int, default=100)
         p.add_argument("--batch-size", type=int, default=16)
@@ -52,6 +54,8 @@ def main():
         key, value = setting.split("=", 1)
         config[key] = json.loads(value)
     config["variant"] = args.variant
+    if args.backbone:
+        config["backbone"]=args.backbone
     out = Path(args.output)
     if args.command in {"train", "evaluate", "plot", "prepare"}:
         out.mkdir(parents=True, exist_ok=True)
@@ -158,6 +162,8 @@ def main():
         from scipy.special import softmax
         from sklearn.metrics import log_loss
         state = torch.load(args.model, map_location=args.device, weights_only=True)
+        if args.score:
+            state["config"]["variant"]=args.score
         network = method.Model(state["config"]).to(args.device)
         network.load_state_dict(state["state"])
         network.eval()
@@ -189,6 +195,8 @@ def main():
         torch.save(state, out)
     elif args.command == "evaluate":
         state = torch.load(args.model, map_location=args.device, weights_only=True)
+        if args.score:
+            state["config"]["variant"]=args.score
         network = method.Model(state["config"]).to(args.device)
         network.load_state_dict(state["state"])
         network.eval()
