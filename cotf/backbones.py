@@ -1,7 +1,4 @@
-"""Distinct sparse-field estimators used by the paper's reconstruction controls.
-
-Architectures are reimplemented from the cited primary methods, without vendored code.
-"""
+"""Sparse-field reconstruction estimators; sources are listed in README."""
 
 import math
 
