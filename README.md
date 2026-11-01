@@ -78,3 +78,21 @@ python tests/backbones.py
 Actual check environment: Python 3.13.5, PyTorch 2.7.1+cu118, CPU/one torch and BLAS thread, NumPy 2.1.3, seed 13/19. The first check runs analytic NPZ preparation, two training epochs, grouped calibration, evaluation, plotting and hand-calculated AURC. The second trains all seven distinct estimators, checks finite loss/parameter updates, learned Fourier-mode gradients, every ensemble member's gradients, exact checkpoint reloads, sensor permutation and missing-input invariance, context dependence, ordinary-kriging constant reproduction and RecFNO mesh changes. It also executes each estimator through the actual file/CLI train/evaluate path and validation-only floor/frozen-score protocols. These are software checks; real reference-field experiments and full training were not rerun.
 
 The architectural mechanisms follow the primary [Senseiver implementation](https://github.com/OrchardLANL/Senseiver), [RecFNO paper](https://arxiv.org/abs/2302.09808), [DeepONet paper](https://doi.org/10.1038/s42256-021-00302-5) and [Voronoi reconstruction paper](https://doi.org/10.1038/s42256-021-00402-2). This repository reimplements those mechanisms and exposes unspecified widths, grid sizes and covariance choices explicitly; it does not vendor or relabel upstream code.
+
+
+## Independent measured thermal-field input
+
+The [López Bonilla et al. pouch-cell surface-temperature release](https://zenodo.org/records/17938718) provides measured luminescence-thermometry fields in Celsius and physical coordinates in millimetres for one 75 Ah NMC/graphite cell, six charge/discharge conditions at 1/2/3 C. It is an independent real-input source, rather than the paper's 12-module IR reference or 300-parent electro-thermal corpus.
+
+```bash
+python -m pip install -e ".[public-data]"
+# Download surface_temperature_pouchcell_data_allC.h5 from the linked release.
+python -m cotf.public_pouch --input data/public_pouch/surface_temperature_pouchcell_data_allC.h5 --output data/public_pouch/all_fields.npz --query-stride 8
+python tests/real_pouch.py --input data/public_pouch/surface_temperature_pouchcell_data_allC.h5 --output runs/real_pouch
+```
+
+The native reader resolves the actual temperature axes from x/y/time lengths: this release stores `[Nx,Ny,Nt]` despite an inconsistent axes attribute. It rejects ambiguous dimensions or non-Celsius units, keeps finite measured pixels without image color conversion or invented temperature values, and records exact frame/condition/axis provenance in the adjacent JSON. Eight input sensors are selected measured pixels of that same dense field, not independently measured thermocouples. Four two-pixel removal groups are registered. Electrical records are not retained as model context. All six conditions keep the **same physical cell parent and test-only split**, so this reader cannot fabricate independent training/calibration cells from frames.
+
+Actual download on 2026-11-01: 18,621,296-byte HDF5, 268 original measured fields. The full import produced 268 fields with 271 selected queries each. The bounded check uses three frames per condition (18 fields), independently matches every target to the raw HDF5 pixel, exercises finite Senseiver gradients and a parameter update, and reloads its locally created functional checkpoint exactly (max error 0). This gradient exercise is not a fitted or calibrated benchmark; no grouped coverage is claimed from a single cell.
+
+The original 180 IR/dense-sensor module fields, associated registration/calibration, 300 electro-thermal parent fields and original model configurations remain absent from the local paper/source/history archive, which contains result summaries but no field arrays. NASA/CALCE single-cell operating traces cannot recover those spatial assets. The public measured-input loader closes an actual data-access check without replacing the missing original experimental corpus.
